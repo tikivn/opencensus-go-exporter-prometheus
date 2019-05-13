@@ -43,22 +43,27 @@ type Exporter struct {
 // Options contains options for configuring the exporter.
 type Options struct {
 	Namespace   string
-	Registry    *prometheus.Registry
+	Gatherer    prometheus.Gatherer
+	Registerer  prometheus.Registerer
 	OnError     func(err error)
 	ConstLabels prometheus.Labels // ConstLabels will be set as labels on all views.
 }
 
 // NewExporter returns an exporter that exports stats to Prometheus.
 func NewExporter(o Options) (*Exporter, error) {
-	if o.Registry == nil {
-		o.Registry = prometheus.NewRegistry()
+	if o.Gatherer == nil {
+		o.Gatherer = prometheus.DefaultGatherer
 	}
-	collector := newCollector(o, o.Registry)
+	if o.Registerer == nil {
+		o.Registerer = prometheus.DefaultRegisterer
+	}
+
+	collector := newCollector(o, o.Registerer)
 	e := &Exporter{
 		opts:    o,
-		g:       o.Registry,
+		g:       o.Gatherer,
 		c:       collector,
-		handler: promhttp.HandlerFor(o.Registry, promhttp.HandlerOpts{}),
+		handler: promhttp.HandlerFor(o.Gatherer, promhttp.HandlerOpts{}),
 	}
 	collector.ensureRegisteredOnce()
 
@@ -112,7 +117,7 @@ type collector struct {
 	registerOnce sync.Once
 
 	// reg helps collector register views dynamically.
-	reg *prometheus.Registry
+	reg prometheus.Registerer
 
 	// reader reads metrics from all registered producers.
 	reader *metricexport.Reader
@@ -132,11 +137,12 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 	c.reader.ReadAndExport(me)
 }
 
-func newCollector(opts Options, registrar *prometheus.Registry) *collector {
+func newCollector(opts Options, registrar prometheus.Registerer) *collector {
 	return &collector{
 		reg:    registrar,
 		opts:   opts,
-		reader: metricexport.NewReader()}
+		reader: metricexport.NewReader(),
+	}
 }
 
 func (c *collector) toDesc(metric *metricdata.Metric) *prometheus.Desc {
